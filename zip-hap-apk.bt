@@ -1,0 +1,1247 @@
+//-----------------------------------
+//--- 010 Editor v2.0 Binary Template
+//
+// File:     Hap.bt
+// Author:   klop
+// Version:  1.0
+// Purpose:  Define a template to parse .zip format files.
+//      In addition, this can parse the signature block format of .hap and .apk
+// Changes:  
+// 1.0 (klop): 
+//   - base version.
+//-----------------------------------
+
+// Define structures used in ZIP files
+
+//enum used for compression format
+typedef enum <short> { 
+	Method_Stored       = 0,
+	Method_Shrunk       = 1,
+	Method_Reduced1     = 2,
+	Method_Reduced2     = 3,
+	Method_Reduced3     = 4,
+	Method_Reduced4     = 5,
+	Method_Imploded     = 6,
+	Method_Tokenizing   = 7,//Reserved for Tokenizing compression algorithm
+	Method_Deflated     = 8, // Deflate - standard ZIP codec, used from the start, also found in regular ZIP files
+	Method_Deflate64    = 9,
+    Method_PKImploding  = 10,
+	//11 - Reserved by PKWARE
+	Method_BZip2        = 12, // BZIP2 - Newer than deflate, with better compression and slightly slower speed.
+	Method_LZMA         = 14, // LZMA - advanced ZIPX codec, taken from open source 7-zip format
+	Method_Terse        = 18,
+	Method_Lz77         = 19,
+
+	Method_Jpeg         = 0x60, // Jpeg - Codec added by WinZip for specific support of jpeg images ( http://www.winzip.com/wz_jpg_comp.pdf )
+	Method_WavPack      = 0x61, // WavPack - Codec for compressing specifically wav files. ( http://www.wavpack.com )
+	Method_PPMd         = 0x62, // PPMd - context modeling based codec, also featured in new ZIP standard. We use it in our Optimized method for text file compression. ( http://www.compression.ru/ds/ )
+	Method_WzAES        = 0x63  // WZAES encryption methods   
+} ZipCompressMethod;
+ 
+
+const uint16 kZipEocdMinRecordLen   = 22;
+const uint32 kZipEocdSignature      = 0x06054b50;
+const uint16 kZipMaxCommentLen      = 65535;
+
+const uint16 kEocdOffset_DirectoryEntries	= 0x0A;
+const uint16 kEocdOffset_DirectorySize		= 0x0C;
+const uint16 kEocdOffset_DirectoryOffset	= 0x10;
+
+
+struct ZipEndOfCentralDirectoryRecord
+{
+	uint32
+		signature<format=hex>;
+	uint16
+		disk_number;
+	uint16
+		start_disk_number;
+	uint16
+		disk_entries;
+	uint16
+		directory_entries;
+	uint32
+		directory_size;
+	uint32
+		directory_offset;
+	uint16
+		zip_comment_length;
+	if( zip_comment_length > 0 )
+        char    zip_comment[ zip_comment_length ];
+		
+};
+
+const uint32 kZipFddSignature   = 0x08074b50;
+typedef struct {
+    uint32
+		signature<format=hex, bgcolor=0xffffc4>;
+    uint
+        file_crc <format=hex>;
+    uint
+        compressed_size;
+    uint
+        uncompressed_size;
+
+} ZipFileDataDescriptor;
+
+
+const uint32 kZipDsSignature   = 0x05054b50;
+typedef struct {
+    uint32
+        signature; 
+    uint16
+        data_length;
+
+    if( data_length > 0 ){
+        uchar
+            dsData[ data_length ];
+    }
+        
+} ZipDigitalSignature;
+
+
+#define kZipLfhSignature  0x04034b50
+typedef struct 
+{
+
+	uint32
+		signature<format=hex>;
+	uint16
+		extract_version;
+	//ZipFlag
+	uint16
+		flags;
+	ZipCompressMethod
+		compress_method;
+	DOSTIME
+		file_time;
+	DOSDATE
+		file_date;
+	uint32
+		file_crc<format=hex>;;
+	uint32
+		compressed_size;
+	uint32
+		uncompressed_size;
+	uint16
+		file_name_length;
+	uint16
+		file_extra_length;
+    if( file_name_length > 0 ){
+        char
+            file_name[file_name_length]
+                <bgcolor=cLtGreen>;
+    }
+
+    if( file_extra_length > 0 ){
+        uchar
+            file_extra[file_extra_length];
+    }
+
+    if( compressed_size > 0 ){
+        uchar
+            file_Data[compressed_size]
+                <bgcolor=cNone>;
+    }
+        
+
+}ZipLocalFileRecord<
+    read=OnRead_ZipLocalFileRecord, 
+    write=OnWrite_ZipLocalFileRecord>;
+
+
+const uint32 kZipCdSignature = 0x02014b50;
+const uint32 kCdOffset_LocalFileHeader  = 42;
+const uint32 kCdOffset_FileCommentLength= 32;
+const uint32 kCdOffset_FileExtraLength  = 30;
+const uint32 kCdOffset_FileNameLength   = 28;
+
+typedef struct
+{
+	uint32
+		signature <format=hex, bgcolor=0x3fc767>;
+	uint16
+		version_made_by;
+	uint16
+		version_to_extract;
+	uint16
+		flags;
+	ZipCompressMethod
+		compress_method;
+	DOSTIME
+		file_time;
+	DOSDATE
+		file_date;
+	uint32
+		file_crc <format=hex>;
+	uint32
+		compressed_size;
+	uint32
+		uncompressed_size;
+	uint16
+		file_name_length;
+	uint16
+		file_extra_length;
+	uint16
+		file_comment_length;
+	uint16
+		disk_number_start;
+	uint16
+		internal_file_attr;
+	uint32
+		external_file_attr;
+	uint32
+		local_file_header_offset<bgcolor=cLtGreen>;
+	if( file_name_length > 0 )
+        char
+			file_name[ file_name_length ]
+                <bgcolor=cLtPurple>;
+    if( file_extra_length > 0 )
+        uchar
+			file_extra[ file_extra_length ];
+    if( file_comment_length > 0 )
+        uchar
+			file_comment[ file_comment_length ];
+
+} ZipCentralDirectoryRecord
+     <read=OnRead_ZipCentralDirectoryRecord>;
+
+
+string OnRead_ZipLocalFileRecord( ZipLocalFileRecord &lfh )
+{
+    if( exists( lfh.file_name ) )
+        return lfh.file_name;
+    else
+        return "";
+}
+
+string OnRead_ZipCentralDirectoryRecord( ZipCentralDirectoryRecord &cd )
+{
+    if( exists( cd.file_name ) )
+        return cd.file_name;
+    else
+        return "";
+}
+
+void OnWrite_ZipLocalFileRecord( ZipLocalFileRecord &lfh, string s )
+{
+    local int len = Strlen( s );
+    if( exists( lfh.file_name ) )
+    {
+        Strncpy( lfh.file_name, s, lfh.file_name_length );
+        if( len < lfh.file_name_length )
+            lfh.file_name[len] = 0;       
+    }
+}
+
+//--------------------------------------------
+
+
+#define V_ASN1_UNIVERSAL                0x00
+#define V_ASN1_APPLICATION              0x40
+#define V_ASN1_CONTEXT_SPECIFIC         0x80
+#define V_ASN1_PRIVATE                  0xc0
+
+#define V_ASN1_CONSTRUCTED              0x20
+#define V_ASN1_PRIMITIVE_TAG            0x1f
+
+/* ASN.1 tag values */
+#define V_ASN1_EOC                      0
+#define V_ASN1_BOOLEAN                  1 /**/
+#define V_ASN1_INTEGER                  2
+#define V_ASN1_BIT_STRING               3
+#define V_ASN1_OCTET_STRING             4
+#define V_ASN1_NULL                     5
+#define V_ASN1_OBJECT                   6
+#define V_ASN1_OBJECT_DESCRIPTOR        7
+#define V_ASN1_EXTERNAL                 8
+#define V_ASN1_REAL                     9
+#define V_ASN1_ENUMERATED               10
+#define V_ASN1_UTF8STRING               12
+#define V_ASN1_SEQUENCE                 16
+#define V_ASN1_SET                      17
+#define V_ASN1_NUMERICSTRING            18 /**/
+#define V_ASN1_PRINTABLESTRING          19
+#define V_ASN1_T61STRING                20
+#define V_ASN1_TELETEXSTRING            20/* alias */
+#define V_ASN1_VIDEOTEXSTRING           21 /**/
+#define V_ASN1_IA5STRING                22
+#define V_ASN1_UTCTIME                  23
+#define V_ASN1_GENERALIZEDTIME          24 /**/
+#define V_ASN1_GRAPHICSTRING            25 /**/
+#define V_ASN1_ISO64STRING              26 /**/
+#define V_ASN1_VISIBLESTRING            26/* alias */
+#define V_ASN1_GENERALSTRING            27 /**/
+#define V_ASN1_UNIVERSALSTRING          28 /**/
+#define V_ASN1_BMPSTRING                30
+
+
+typedef struct
+{
+    uchar tag<format=hex>;
+
+}asn1_tag<read=Read_asn1_tag>;
+
+
+typedef struct
+{
+    local uchar first_byte = ReadUByte();
+    if((first_byte & 0x80) != 0x80){
+        uchar len_bytes[1];
+    }
+    else{
+        local char len_bytes_tmp = first_byte & 0x7f;
+        if(len_bytes_tmp <= 8){
+            uchar len_bytes[len_bytes_tmp + 1];
+        }
+    }
+   
+}asn1_length<read=Read_asn1_length>;
+
+
+uint64 Get_asn1_length(asn1_length& asn_len){
+    local uint64 len = 0;
+    local char len_bytes = sizeof(asn_len.len_bytes);
+    if(len_bytes <= 1){
+        return asn_len.len_bytes[0];
+    }
+
+    len_bytes--;
+    local uint64 one_byte;
+    local uchar i = 0;
+    while(len_bytes-- > 0){
+        one_byte = 0;
+        one_byte = asn_len.len_bytes[ i + 1];
+        len = len << 8 | (one_byte & 0x0FF);
+        i++;
+    }
+
+    return len;
+}
+
+
+string Read_asn1_length(asn1_length& asn_len){
+  
+    string s;
+    SPrintf( s, "%ld", Get_asn1_length(asn_len));
+    return s;
+}
+
+
+typedef struct(uint32 data_len)
+{
+    uchar bytes[data_len];
+
+}asn1_value;  
+
+string asn1_value_ParseAsString(asn1_value& val){
+    return val.bytes;   
+}
+
+
+typedef struct(uint32 data_len)
+{
+    ParseASN1Recurse(FTell() + data_len);
+
+}ASN1_Data<read=OnRead_ASN1_Data>;
+
+string OnRead_ASN1_Data(ASN1_Data& data){
+    return "===>";
+}
+
+
+uchar Get_ASN1_type(asn1_tag& asn_tag){
+    return asn_tag.tag & V_ASN1_PRIMITIVE_TAG;
+}
+
+uchar Get_ASN1_class(asn1_tag& asn_tag){
+    return asn_tag.tag & 0xE0;
+}
+
+string Read_asn1_tag(asn1_tag& asn_tag){
+    uchar class= Get_ASN1_class(asn_tag);
+    uchar type = Get_ASN1_type(asn_tag);
+
+
+    string class_decr;
+    if(class != V_ASN1_UNIVERSAL){
+
+        if((class & V_ASN1_PRIVATE) == V_ASN1_PRIVATE){
+            class_decr = "<Private>";
+            string s;
+            SPrintf(s, " (%d)", type);
+            class_decr += s;
+            return class_decr;
+        }
+
+        if((class & V_ASN1_APPLICATION) == V_ASN1_APPLICATION){
+            class_decr = "<Application>";
+            string s;
+            SPrintf(s, " (%d)", type);
+            class_decr += s;
+            return class_decr;
+        }
+
+        if((class & V_ASN1_CONTEXT_SPECIFIC) == V_ASN1_CONTEXT_SPECIFIC){
+            class_decr = "<ContextSpecific>";
+
+            if((class & V_ASN1_CONSTRUCTED) == V_ASN1_CONSTRUCTED){
+                class_decr += " | Constructed>";
+            }
+
+            string s;
+            SPrintf(s, " (%d)", type);
+            class_decr += s;
+            return class_decr;
+            
+        }
+    }
+
+
+    string result;
+    switch( type ) 
+    {
+        case V_ASN1_EOC: result = "End-of-Content"; break;
+        case V_ASN1_BOOLEAN: result = "Boolean"; break;
+        case V_ASN1_INTEGER: result = "Integer"; break;
+        case V_ASN1_BIT_STRING: result = "BitString"; break;
+        case V_ASN1_OCTET_STRING: result = "OctetString"; break;
+        case V_ASN1_NULL: result = "NULL"; break;
+        case V_ASN1_OBJECT: result = "ObjectId"; break;
+        case V_ASN1_OBJECT_DESCRIPTOR: result = "ObjectDecr"; break;
+        case V_ASN1_EXTERNAL: result = "External"; break;
+        case V_ASN1_REAL: result = "Real"; break;
+        case V_ASN1_ENUMERATED: result = "Enum"; break;
+        case V_ASN1_UTF8STRING: result = "Utf8String"; break;
+        case V_ASN1_SEQUENCE: result = "Squence"; break;
+        case V_ASN1_SET: result = "Set"; break;
+        case V_ASN1_NUMERICSTRING: result = "NumberString"; break;
+        case V_ASN1_PRINTABLESTRING: result = "PrintableString"; break;
+        case V_ASN1_T61STRING:;
+        case V_ASN1_TELETEXSTRING: result = "T61String"; break;
+        case V_ASN1_VIDEOTEXSTRING: result = "VideotexString"; break;
+        case V_ASN1_IA5STRING: result = "IA5String"; break;
+        case V_ASN1_UTCTIME: result = "UTCTime"; break;
+        case V_ASN1_GENERALIZEDTIME: result = "GeneralizedTime"; break;
+        case V_ASN1_GRAPHICSTRING: result = "GraphicString"; break;
+        case V_ASN1_ISO64STRING:
+        case V_ASN1_VISIBLESTRING: result = "VisibleString | Iso64String"; break;
+        case V_ASN1_GENERALSTRING: result = "GeneralString"; break;
+        case V_ASN1_UNIVERSALSTRING: result = "UniversalString"; break;
+        case V_ASN1_BMPSTRING: result = "BMPString"; break;
+        default : result = "";
+    }
+
+    result = "<" + result;
+    if((class & V_ASN1_CONSTRUCTED) == V_ASN1_CONSTRUCTED)
+    {
+        result += " | Constructed>";
+    }
+    else
+    {
+        result += ">";
+    }
+    
+    return result;
+}
+
+
+void ParseASN1Recurse(uint64 end_file_offset)
+{
+  
+    local uchar type = 0;
+    local uchar class =0;
+    local uint64 len =0;
+    local uchar parent_type =0;
+
+    while(FTell() < end_file_offset){
+       
+        SetBackColor(0xcca8e9);
+        asn1_tag t;
+        SetBackColor(0xe0f9b5);
+        asn1_length l;
+
+
+        type    = Get_ASN1_type(t);
+        class   = Get_ASN1_class(t);
+        len     = Get_asn1_length(l);
+
+        //Printf("FTell()=%lXh, class=%Xh, type=%d, len=%Xh\n", FTell(), class, type, len);
+
+        if(type == V_ASN1_SEQUENCE
+            || type == V_ASN1_SET
+            || (class & V_ASN1_CONSTRUCTED) == V_ASN1_CONSTRUCTED){
+
+            ASN1_Data Item(len);
+        }
+        else{
+            SetBackColor(cNone);
+           
+            switch( type ) 
+            {
+                case V_ASN1_NULL:{
+                    
+                }
+                break;
+                case V_ASN1_UTF8STRING:
+                case V_ASN1_NUMERICSTRING:
+                case V_ASN1_PRINTABLESTRING:
+                case V_ASN1_TELETEXSTRING:
+                case V_ASN1_VIDEOTEXSTRING:
+                case V_ASN1_IA5STRING:
+                case V_ASN1_ISO64STRING:
+                case V_ASN1_GENERALSTRING:
+                case V_ASN1_UNIVERSALSTRING:
+                case V_ASN1_BMPSTRING:
+                case V_ASN1_UTCTIME:
+                {
+                     asn1_value val(len)<read=asn1_value_ParseAsString>; 
+                }
+                break;
+                default : {
+                     asn1_value val(len); 
+                }
+                break;
+            }
+        }
+    }
+}
+
+
+
+//---------------------------------------------
+const uint32 kApkSign_MaigcSize = 16;
+const char   kApkSign_Magic[] = "APK Sig Block 42";
+
+
+// Defines v2 Digest
+typedef struct {
+    uint32   elSize<bgcolor=cLtYellow>;;
+	uint32 signatureAlgorithmID <format=hex,comment=AlgorithmIDCommentFunc>;
+	uint32 digestDataSize;
+    if(digestDataSize > 0){
+        uchar  digestData[digestDataSize];
+    }
+} Digest;
+
+// Defines v2 Digests
+typedef struct {
+    uint32   elSize<bgcolor=cLtGreen>;
+	local int pos = FTell();
+	while (FTell() < pos + elSize){
+		Digest digest;
+	}
+} Digests;
+
+// Defines v2  X.509 certificates
+typedef struct {
+    uint32   elSize;
+    ASN1_Data elCertificatesData(elSize);
+} X509Certificate;
+
+// Defines v2  X.509 certificates
+typedef struct {
+    uint32   elSize;
+	local int pos = FTell();
+	while (FTell() < pos + elSize){
+		X509Certificate x509Certificate;
+	}
+} X509Certificates;
+
+
+// Defines v2  additional attributes
+typedef struct {
+    uint32   elSize;
+	if(elSize > 0){
+		uint32  elID<format=hex>;
+		uchar   elData[elSize - sizeof(elID)];
+	}
+	
+} AdditionalAttribute;
+
+// Defines v2  additional attributes
+typedef struct {
+    uint32   elSize;
+	if(elSize > 0){
+		local int pos = FTell();
+		while (FTell() < pos + elSize){
+			AdditionalAttribute additionalAttribute;
+		}
+	}
+	else{
+		local int pos = FTell();
+		AdditionalAttribute additionalAttribute;
+		if(additionalAttribute.elSize > 0){
+			FSeek(pos);
+		}
+	}
+	
+} AdditionalAttributes;
+
+
+// Defines v2 ApkSignedDataV2
+typedef struct {
+    local uint64 cur_pos = FTell();
+    uint32   elSize<bgcolor=cLtYellow>;
+	Digests   elDigests;
+	X509Certificates elX509Certificates;
+    AdditionalAttributes elAdditionalAttributes;
+    local uint64 readed_offset = FTell();
+    local uint64 diff = readed_offset - cur_pos - sizeof(elSize);
+    //Printf("diff = %lx\n", diff);
+    if(diff  < elSize){
+        FSkip(elSize - diff);
+    }
+
+} ApkSignedDataV2;
+
+
+// Defines v2 Signature
+typedef struct {
+    uint32 elSize<bgcolor=cLtGreen>;
+	uint32 signatureAlgorithmID <format=hex,comment=AlgorithmIDCommentFunc>;
+	uint32 signatureDataSize;
+    uchar  signatureData[signatureDataSize];
+}Signature;
+
+// Defines v2 Signatures
+typedef struct {
+    uint32   elSize<bgcolor=cLtGreen>;
+	local int pos = FTell();
+	while (FTell() < pos + elSize){
+		Signature signature;
+	}
+}Signatures;
+
+// Defines v2 Signatures
+typedef struct {
+    uint32   elSize<bgcolor=cLtGreen>;
+	if(elSize > 0){
+		uchar   elKeyData[elSize];
+	}
+}PublicKey;
+
+// Defines v2 Signer
+typedef struct {
+    uint32   elSize<bgcolor=cLtGreen>;
+	ApkSignedDataV2 elSignData;
+    Signatures elSignatures;
+	PublicKey elPublicKey;
+} ApkSignerV2;
+
+
+
+#define ApkBlockMagic_V2        0x7109871a
+#define ApkBlockMagic_V3        0xf05368c0
+#define ApkBlockMagic_Padding   0x42726577
+
+
+typedef struct {
+	uint32   elSize<bgcolor=cLtYellow>;
+	local int pos = FTell();
+	while (FTell() < pos + elSize){
+		ApkSignerV2 signerV2;
+	}
+
+} ApkBlockV2;
+
+
+typedef struct {
+	uint64  elSize<bgcolor=cLtGreen>;
+    uint32	elID <format=hex,bgcolor=0xffff44>;
+	if(elID == ApkBlockMagic_V2){
+		ApkBlockV2 v2;
+	}
+    //else if(elID == ApkBlockMagic_V3){
+        //to do
+		//ApkBlockV3 v3;
+	//}
+	else{
+		char elValue[elSize - sizeof(elID)];
+	}
+
+} KeyValueBlock<read=OnRead_KeyValueBlock>;
+
+string OnRead_KeyValueBlock(KeyValueBlock& block)
+{
+    if(block.elID == ApkBlockMagic_V2){
+        return "v2 block";
+    }
+
+    if(block.elID == ApkBlockMagic_V3){
+        return "v3 block";
+    }
+
+    if(block.elID == ApkBlockMagic_Padding){
+        return "Zero padding";
+    }
+
+    return "";
+}
+
+// Defines v2 block
+typedef struct {
+    uint64   elBlockSize;
+	local int pos = FTell();
+	while (FTell() < pos + elBlockSize - 24 )
+        KeyValueBlock keyValueBlock;
+    uint64   elBlockSize2;
+	char   	 elEndSig[16];
+} ApkSigningBlock;
+
+
+//--------------------------------------------
+
+
+string AlgorithmIDCommentFunc( uint32 &s )
+{
+    string result="";
+	switch( s ) 
+    {
+        case 0x0101: result = "SHA2-256 => RSASSA-PSS(SHA2-256 MGF1, 32-Salt, 0xbc)"; break;
+        case 0x0102: result = "SHA2-512 => RSASSA-PSS(SHA2-512 MGF1, 64-Salt, 0xbc)"; break;
+        case 0x0103: result = "SHA2-256 => RSASSA-PKCS1-v1_5"; break;
+        case 0x0104: result = "SHA2-512 => RSASSA-PKCS1-v1_5"; break;
+		case 0x0201: result = "SHA2-256 => ECDSA"; break;
+		case 0x0202: result = "SHA2-512 => ECDSA"; break;
+		case 0x0301: result = "SHA2-256 => DSA"; break;
+        default : result = "";
+    }
+	
+	return result;
+}
+
+//--------------------------------------------
+
+struct ZipFileRecords(uint16 directory_entries, uint32 directory_size, uint32 directory_offset)
+{
+    if( FSeek(directory_offset) != 0){
+        Warning( "FSeek eocd.directory_offset" );
+        return;
+    }
+
+    local int64 cur_offset = FTell();
+    local uint32 tag;
+    local uint32 cur_pos;
+    local uint16 file_name_length   = 0;
+    local uint16 file_extra_length  = 0;
+    local uint16 file_comment_length= 0;
+    local uint32 file_record_offset = 0;
+    local uint32 entrys_index = 0;
+
+    while((FTell() - cur_offset) < directory_size){
+        tag = ReadUInt();
+        if( tag != kZipCdSignature )
+        {
+            Warning( "tag != kZipCdSignature" );
+            return;
+        }
+
+        cur_pos = FTell();
+        FSeek(cur_pos + kCdOffset_FileNameLength);
+        file_name_length    = ReadUShort();
+
+        FSeek(cur_pos + kCdOffset_FileExtraLength);
+        file_extra_length   = ReadUShort();
+
+        FSeek(cur_pos + kCdOffset_FileCommentLength);
+        file_comment_length = ReadUShort();
+
+        FSeek(cur_pos + kCdOffset_LocalFileHeader);
+        file_record_offset  = ReadUInt();
+
+        FSeek(cur_pos + kCdOffset_LocalFileHeader + 4);
+        if(file_name_length > 0){
+            FSkip(file_name_length);
+        }
+        if(file_extra_length > 0){
+            FSkip(file_extra_length);
+        }
+        if(file_comment_length > 0){
+            FSkip(file_comment_length);
+        }
+
+        tag = ReadUInt();
+        if( tag == kZipDsSignature )
+        {
+            FSkip(sizeof(ZipDigitalSignature));
+        }
+
+        cur_pos = FTell();
+        if( FSeek(file_record_offset) != 0){
+            Warning( "FSeek(file_record_offset) != 0" );
+            exit(-1);
+        }
+        
+        tag = ReadUInt();
+        if( tag == kZipLfhSignature )
+        {
+            ZipLocalFileRecord lfh;
+            tag = ReadUInt();
+            if( tag == kZipFddSignature )
+            {
+                ZipFileDataDescriptor dd;
+            }
+        }
+
+        FSeek(cur_pos);
+    }
+};
+
+
+struct ZipCentralDirectoryRecords(uint16 directory_entries, uint32 directory_size, uint32 directory_offset)
+{
+	if( FSeek(directory_offset) != 0){
+        Warning( "FSeek eocd.directory_offset" );
+        return;
+    }
+
+    local int64 cur_offset = FTell();
+    local uint32 tag;
+    local uint32 cur_pos;
+    while((FTell() - cur_offset) < directory_size){
+        tag = ReadUInt();
+        if( tag != kZipCdSignature )
+        {
+            Warning( "tag != kZipCdSignature" );
+            return;
+        }
+
+        ZipCentralDirectoryRecord cd;
+
+        tag = ReadUInt();
+        if( tag == kZipDsSignature )
+        {
+            ZipDigitalSignature ds;
+        }
+    }
+};
+
+
+// hap sign defines
+//--------------------------------------------
+const uint32 kHapSign_BlockHeaderSize = 32;
+const uint32 kHapSign_SchemeV2  = 2;
+const uint32 kHapSign_SchemeV3  = 3;
+const uint32 kHapSign_MaigcSize = 16;
+const char   kHapSign_MagicV2[] = "HAP Sig Block 42";
+const char   kHapSign_MagicV3[] = "<hap sign block>";
+
+struct HapSignBlockHeader
+{
+    uint32 block_count;
+    uint64 block_size;
+    char magic[16];
+    uint64 sig_scheme;
+};
+
+typedef struct
+{
+    uint32 type<format=hex>;
+    uint32 length;
+    uint32 offset<format=hex>;
+
+}HapSignOptionalBlock<read=ReadHapSignOptionalBlock>;
+
+
+uint64 AlignAddrFloor(uint64 addr, uint64 range){
+    return ((uint64)addr & ~((uint64)range - 1));
+}
+
+uint64 AlignAddrCeil(uint64 addr, uint64 range){
+    return (((uint64)addr + (uint64)range - 1) & ~((uint64)range - 1));
+}
+
+#define kAlignMentForSignInfo  4
+
+struct HapSignInfo{
+    uint32 saltSize;
+    uint32 sigSize;
+    uint32 flags;
+    uint64 dataSize;
+    uchar salt[32];
+    uint32 extensionNum;
+    uint32 extensionOffset;
+    uchar signature[sigSize];
+    uchar zeroPadding[kAlignMentForSignInfo - sigSize%kAlignMentForSignInfo];
+
+
+    local int j;
+    for(j = 0; j < extensionNum; ++j){
+        struct MerkleTreeExtension{
+            uint32 type;
+            uint32 size;
+            uint64 inMerkleTreeSize<format=hex>;
+            uint64 inMerkleTreeOffset<format=hex>;
+            uchar  rootHash[64];
+        }extension;
+
+    }
+
+};
+
+
+
+typedef struct(uint32 data_len)
+{
+    ASN1_Data Item(data_len);
+
+}PKCS7Data;
+
+
+
+typedef struct(uint32 block_size)
+{
+    local char tag[] = ReadString( FTell(), 2);
+    if(Strcmp(tag, "{\"") == 0){
+        //simple check
+        char content[block_size];
+    }
+    else{
+        PKCS7Data data(block_size);
+    }
+    
+}HapProfileBlock;
+
+typedef struct(uint32 block_size)
+{
+    PKCS7Data pkcs7Context(block_size);
+    
+}HapSignatureBlock;
+
+
+typedef struct
+{
+
+    uint32 type<format=hex>;
+    uint32 length;
+    uint32 offset<format=hex>;
+
+    FSeek(offset);
+
+    // 1.2) parse codeSignBlockHeader
+    struct CodeSignBlockHeader{
+        uint64 magic<format=hex, bgcolor=0x3fc767>;
+        uint32 version;
+        uint32 block_size;
+        uint32 segment_count;
+        int    flags;
+        uchar  reserved[8];
+    }header;
+
+    if(header.block_size != length){
+        exit(-5);
+    }
+
+    // 2) parse segment headers
+    struct SegmentHeader{
+        uint32 type<format=hex>;
+        uint32 offset<format=hex>;
+        uint32 size;
+    } Segments[header.segment_count]<read=ReadSegmentHeader>;
+
+    local uint64 readed_offset = FTell() - startof(header);
+    local uint64 cur_offset = readed_offset + offset;
+    local uint64 algin_offset = AlignAddrCeil(cur_offset, 4096);
+
+    local uint64 padding_size = algin_offset - cur_offset;
+    readed_offset += padding_size;
+
+    uchar zero_padding[padding_size];
+    Printf("padding_size = %LX\n", padding_size);
+
+    local int i;
+    for(i = 0; i < header.segment_count; ++i){
+        // get merkle tree bytes
+        if (readed_offset < Segments[i].offset) {
+            local uint64 merkle_tree_size = Segments[i].offset - readed_offset;
+            Printf("merkle_tree_size = %LX\n", merkle_tree_size);
+            uchar merkleTreeBytes[merkle_tree_size];
+            readed_offset += merkle_tree_size;
+        }
+
+        readed_offset += Segments[i].size;
+        if (Segments[i].type == 1) {
+            // 3) parse fs-verity info segment
+            struct FsVerityInfoSegment{
+                uint32 magic<format=hex, bgcolor=0x3fc767>;
+                uchar hashAlgorithm;
+                uchar version;
+                uchar log2BlockSize;
+                uchar reverseArr[57];
+            }FsVerityInfoSeg;
+                    
+ 
+        } else if (Segments[i].type == 2) {
+            // 4) parse hap info segment
+            struct HapInfoSegment{
+                uint32 magic<format=hex, bgcolor=0x3fc767>;
+
+                HapSignInfo SignInf;
+            }HapInfoSegm;
+        } else if (Segments[i].type == 3) {
+            // 5) parse so info segment
+            struct NativeLibInfoSegment{
+                uint32 magic<format=hex, bgcolor=0x3fc767>;
+                uint32 segmentSize;
+                uint32 sectionNum;
+
+                g_native_lib_start = startof(magic);
+               
+                
+                
+                typedef struct {
+                    uint32 name_offset<format=hex>;
+                    uint32 name_length;
+                    uint32 sign_offset<format=hex>;
+                    uint32 sign_size;
+                }SignedFile<read=ReadSignedFile>;
+
+                SignedFile files[sectionNum];
+                local int j;
+                local uint32 file_name_total_legnth = 0;
+                for(j = 0; j < sectionNum; ++j){
+                    file_name_total_legnth += files[j].name_length;
+                }
+
+                char file_name_pool[file_name_total_legnth];
+                uchar zero_padding[kAlignMentForSignInfo - file_name_total_legnth % kAlignMentForSignInfo];
+
+                for(j = 0; j < sectionNum; ++j){
+
+                    FSeek(g_native_lib_start + files[j].sign_offset);
+                    HapSignInfo SignInf;
+                }
+                
+            }NativeLibInfoSeg;
+        }
+    }
+    
+
+
+}HapCodeSignBlock;
+
+string ReadHapSignOptionalBlock(HapSignOptionalBlock& block)
+{
+    string result="";
+	switch( block.type ) 
+    {
+        case 0x20000000: result = "Signature Scheme V1"; break;
+        case 0x20000001: result = "Proof Of Rotation"; break;
+        case 0x20000002: result = "Hap Profile"; break;
+        case 0x20000003: result = "Hap Property"; break;
+		case 0x30000001: result = "Hap Code Sign"; break;
+        default : result = "";
+    }
+	
+	return result;
+}
+
+local uint64 g_native_lib_start = 0;
+string ReadSignedFile(SignedFile& file)
+{
+    FSeek(g_native_lib_start + file.name_offset);
+    return ReadString(FTell(), file.name_length);
+}
+
+string ReadSegmentHeader(SegmentHeader& header)
+{
+    string result="";
+	switch( header.type ) 
+    {
+        case 0x1: result = "Files Vertify Info"; break;
+        case 0x2: result = "Hap Meta"; break;
+        case 0x3: result = "Hap Native Lib Info"; break;
+        default : result = "";
+    }
+	
+	return result;
+}
+
+//--------------------------------------------
+
+struct HapSigningBlock(uint64 sign_offset, uint64 block_size, int block_count)
+{
+    SetBackColor(cAqua );
+    HapSignOptionalBlock blocks[block_count];
+    local int i;
+    SetBackColor(cNone);
+    for(i = 0; i < block_count; ++i)
+    {
+        FSeek(sign_offset + blocks[i].offset);
+        switch( blocks[i].type ) 
+        {
+            case 0x20000000:{
+                HapSignatureBlock sig_block(blocks[i].length);
+            }break;
+            case 0x20000001:{
+                
+            }break;
+            case 0x20000002:{
+                HapProfileBlock profile(blocks[i].length);
+            }break;
+            case 0x20000003:{
+                HapCodeSignBlock code_sign;
+            }break;
+            case 0x30000001:{
+                
+            }break;
+            default : break;
+        }
+    }
+    
+    
+    FSeek(sign_offset);
+    FSkip(block_size - kHapSign_BlockHeaderSize);
+
+    SetColor(cWhite, 0x5700ee);
+    HapSignBlockHeader header;
+
+    
+};
+
+
+int ParseHapSigningIf(uint32 directory_size, uint32 directory_offset)
+{
+    FSkip(-4);
+    local uint32 hap_version = ReadUInt();
+    if(hap_version == kHapSign_SchemeV2){
+        FSkip(-kHapSign_MaigcSize);
+        local char maigc[] = ReadString(FTell(), kHapSign_MaigcSize);
+        if(Strncmp(maigc, kHapSign_MagicV2, kHapSign_MaigcSize) != 0){
+            return -1;
+        }
+    }
+    else if(hap_version == kHapSign_SchemeV3){
+        FSkip(-kHapSign_MaigcSize);
+        local char maigc[]= ReadString(FTell(), kHapSign_MaigcSize);
+        if(Strncmp(maigc, kHapSign_MagicV3, kHapSign_MaigcSize) != 0){
+            return -2;
+        }
+    }
+    else{
+        return -3;
+    }
+
+    if( FSeek(directory_offset - kHapSign_BlockHeaderSize) != 0){
+        Warning( "ParseHapSigningIf:FSeek eocd.directory_offset!" );
+        return -4;
+    }
+
+
+    local uint32 block_count = ReadUInt();
+    FSkip(4);
+    local uint64 block_size = ReadUInt64();
+    local int64 block_offset = directory_offset;
+    block_offset -= block_size;
+
+    if( FSeek(block_offset) != 0){
+        Warning( "ParseHapSigningIf:FSeek(block_offset)" );
+        return -5;
+    }
+
+    HapSigningBlock hap_sign_block(block_offset, block_size, block_count);
+    
+    return 0;
+}
+
+int ParseApkSigningIf(uint32 directory_size, uint32 directory_offset)
+{
+    FSeek(directory_offset - kApkSign_MaigcSize);
+    local char maigc[] = ReadString(FTell(), kApkSign_MaigcSize);
+    if(Strncmp(maigc, kApkSign_Magic, kApkSign_MaigcSize) != 0){
+        Printf("maigc=%s", maigc);
+        return -1;
+    }
+    
+    FSkip(-8);
+    local uint64 block_size = ReadUInt64();
+    FSeek(directory_offset - block_size - 8);
+    
+    local uint64 block_size2 = ReadUInt64();
+    if(block_size != block_size2){
+        return -2;
+    }
+
+   
+    ApkSigningBlock apk_signing_block;
+
+    return 0;
+}
+
+void ParseSignature(uint32 directory_size, uint32 directory_offset)
+{
+    if( FSeek(directory_offset) != 0){
+        Warning( "ParseHapSigningIf:FSeek(eocd.directory_offset)" );
+        return;
+    }
+
+    if( ParseHapSigningIf(directory_size, directory_offset) == 0){
+        return;
+    }
+
+    if( ParseApkSigningIf(directory_size, directory_offset) == 0){
+        return;
+    }
+
+}
+
+
+LittleEndian(); 
+
+local int64 file_end = FileSize();
+if(file_end <= kZipEocdMinRecordLen ){
+	Warning( "empty file!" );
+    return -1;
+}
+
+local int32 reverse_offset = 0; 
+local uint32 tag = 0;
+while (FSeek(file_end - kZipEocdMinRecordLen) == 0
+        && reverse_offset < kZipMaxCommentLen)
+{
+    tag = ReadUInt();
+    if (tag == kZipEocdSignature)
+    {
+        local uint16 directory_entries = 0;
+        local uint32 directory_size = 0;
+        local uint32 directory_offset = 0;
+
+        FSkip(kEocdOffset_DirectoryEntries);
+        directory_entries = ReadUShort();
+
+        FSkip(sizeof(directory_entries));
+        directory_size = ReadUInt();
+
+        FSkip(sizeof(directory_size));
+        directory_offset = ReadUInt();
+
+        {
+            FSeek(0);
+            SetColor(cNone, cLtAqua);
+            ZipFileRecords zip_entrys(directory_entries, directory_size, directory_offset);
+            SetColor(cNone, cNone);
+        }
+        
+        ParseSignature(directory_size, directory_offset);
+        SetColor(cNone, cNone);
+        {
+            if( FSeek(directory_offset) != 0){
+                Warning( "FSeek eocd.directory_offset" );
+                return -3;
+            }
+            
+            ZipCentralDirectoryRecords zip_cds(directory_entries, directory_size, directory_offset);
+            SetColor(cNone, cNone);
+        }
+        
+
+        SetColor(cWhite, 0xBA3274);
+        ZipEndOfCentralDirectoryRecord eocd;
+
+        return 0;
+    }
+
+    file_end--;
+    reverse_offset++;
+}
