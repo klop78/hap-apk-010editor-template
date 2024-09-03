@@ -596,6 +596,31 @@ typedef struct {
 } ApkSignedDataV2;
 
 
+typedef struct {
+    uint32
+        elSize<bgcolor=cLtYellow>;
+	Digests 
+        elDigests;
+	X509Certificates
+        elX509Certificates;
+    uint32
+		min_sdk;
+	uint32
+		max_sdk;
+
+    AdditionalAttributes
+        elAdditionalAttributes;
+
+    local uint64 readed_offset = FTell();
+    local uint64 diff = readed_offset - startof(elDigests);
+    //Printf("diff = %lx\n", diff);
+    if(diff  < elSize){
+        FSkip(elSize - diff);
+    }
+
+} ApkSignedDataV3;
+
+
 // Defines v2 Signature
 typedef struct {
     uint32 elSize<bgcolor=cLtGreen>;
@@ -629,6 +654,28 @@ typedef struct {
 	PublicKey elPublicKey;
 } ApkSignerV2;
 
+// Defines v3 Signer
+typedef struct {
+    uint32
+        elSize<bgcolor=cLtGreen>;
+
+	ApkSignedDataV3
+        elSignData;
+
+	uint32
+		min_sdk;
+
+	uint32
+		max_sdk;
+
+    Signatures
+        elSignatures;
+
+	PublicKey
+        elPublicKey;
+
+} ApkSignerV3;
+
 
 
 #define ApkBlockMagic_V2        0x7109871a
@@ -645,6 +692,15 @@ typedef struct {
 
 } ApkBlockV2;
 
+typedef struct {
+	uint32   elSize<bgcolor=cLtYellow>;
+	local int pos = FTell();
+	while (FTell() < pos + elSize){
+		ApkSignerV3 signerV3;
+	}
+
+} ApkBlockV3;
+
 
 typedef struct {
 	uint64  elSize<bgcolor=cLtGreen>;
@@ -652,10 +708,9 @@ typedef struct {
 	if(elID == ApkBlockMagic_V2){
 		ApkBlockV2 v2;
 	}
-    //else if(elID == ApkBlockMagic_V3){
-        //to do
-		//ApkBlockV3 v3;
-	//}
+    else if(elID == ApkBlockMagic_V3){
+		ApkBlockV3 v3;
+	}
 	else{
 		char elValue[elSize - sizeof(elID)];
 	}
@@ -832,7 +887,7 @@ struct HapSignBlockHeader
     uint32 block_count;
     uint64 block_size;
     char magic[16];
-    uint64 sig_scheme;
+    uint32 sig_scheme;
 };
 
 typedef struct
