@@ -918,8 +918,12 @@ struct HapSignInfo{
     uint32 extensionNum;
     uint32 extensionOffset;
     uchar signature[sigSize];
-    uchar zeroPadding[kAlignMentForSignInfo - sigSize%kAlignMentForSignInfo];
 
+    local uint32 align_mod = sigSize % kAlignMentForSignInfo;
+    if(align_mod != 0){
+        uchar zeroPadding[kAlignMentForSignInfo - align_mod];
+    }
+   
 
     local int j;
     for(j = 0; j < extensionNum; ++j){
@@ -1060,7 +1064,11 @@ typedef struct
                 }
 
                 char file_name_pool[file_name_total_legnth];
-                uchar zero_padding[kAlignMentForSignInfo - file_name_total_legnth % kAlignMentForSignInfo];
+
+                local uint32 align_mod = file_name_total_legnth % kAlignMentForSignInfo;
+                if(align_mod != 0){
+                    uchar zero_padding[kAlignMentForSignInfo - align_mod];
+                }
 
                 for(j = 0; j < sectionNum; ++j){
 
