@@ -63,7 +63,7 @@ struct ZipEndOfCentralDirectoryRecord
 	uint32
 		directory_size;
 	uint32
-		directory_offset;
+		directory_offset<format=hex>;
 	uint16
 		zip_comment_length;
 	if( zip_comment_length > 0 )
@@ -678,10 +678,10 @@ typedef struct {
 
 
 
-#define ApkBlockMagic_V2        0x7109871a
-#define ApkBlockMagic_V3        0xf05368c0
-#define ApkBlockMagic_Padding   0x42726577
-
+#define ApkBlockMagic_V2                0x7109871a
+#define ApkBlockMagic_V3                0xf05368c0
+#define ApkBlockMagic_Padding           0x42726577
+#define ApkBlockMagic_DependencyInfo    0x504b4453
 
 typedef struct {
 	uint32   elSize<bgcolor=cLtYellow>;
@@ -729,6 +729,10 @@ string OnRead_KeyValueBlock(KeyValueBlock& block)
 
     if(block.elID == ApkBlockMagic_Padding){
         return "Zero padding";
+    }
+
+    if(block.elID == ApkBlockMagic_DependencyInfo){
+        return "SDK dependency block";
     }
 
     return "";
