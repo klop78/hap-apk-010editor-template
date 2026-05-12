@@ -678,10 +678,12 @@ typedef struct {
 
 
 
-#define ApkBlockMagic_V2                0x7109871a
-#define ApkBlockMagic_V3                0xf05368c0
-#define ApkBlockMagic_Padding           0x42726577
-#define ApkBlockMagic_DependencyInfo    0x504b4453
+#define ApkBlockMagic_SIGNATURE_SCHEME_V2	0x7109871a
+#define ApkBlockMagic_SIGNATURE_SCHEME_V3 	0xf05368c0
+#define ApkBlockMagic_VERITY_PADDING		0x42726577
+#define ApkBlockMagic_DEPENDENCY_INFO    	0x504b4453
+#define ApkBlockMagic_V1_SOURCE_STAMP   	0x2b09189e
+#define ApkBlockMagic_V2_SOURCE_STAMP   	0x6dff800d
 
 typedef struct {
 	uint32   elSize<bgcolor=cLtYellow>;
@@ -705,10 +707,10 @@ typedef struct {
 typedef struct {
 	uint64  elSize<bgcolor=cLtGreen>;
     uint32	elID <format=hex,bgcolor=0xffff44>;
-	if(elID == ApkBlockMagic_V2){
+	if(elID == ApkBlockMagic_SIGNATURE_SCHEME_V2){
 		ApkBlockV2 v2;
 	}
-    else if(elID == ApkBlockMagic_V3){
+    else if(elID == ApkBlockMagic_SIGNATURE_SCHEME_V3){
 		ApkBlockV3 v3;
 	}
 	else{
@@ -719,21 +721,30 @@ typedef struct {
 
 string OnRead_KeyValueBlock(KeyValueBlock& block)
 {
-    if(block.elID == ApkBlockMagic_V2){
-        return "v2 block";
+    if(block.elID == ApkBlockMagic_SIGNATURE_SCHEME_V2){
+        return "v2 sign block";
     }
 
-    if(block.elID == ApkBlockMagic_V3){
-        return "v3 block";
+    if(block.elID == ApkBlockMagic_SIGNATURE_SCHEME_V3){
+        return "v3 sign block";
     }
 
-    if(block.elID == ApkBlockMagic_Padding){
-        return "Zero padding";
+    if(block.elID == ApkBlockMagic_VERITY_PADDING){
+        return "Zero vertify padding";
     }
 
-    if(block.elID == ApkBlockMagic_DependencyInfo){
+    if(block.elID == ApkBlockMagic_DEPENDENCY_INFO){
         return "SDK dependency block";
     }
+	
+	if(block.elID == ApkBlockMagic_V1_SOURCE_STAMP){
+        return "v1 source stamp";
+    }
+	
+	if(block.elID == ApkBlockMagic_V2_SOURCE_STAMP){
+        return "v2 source stamp";
+    }
+	
 
     return "";
 }
